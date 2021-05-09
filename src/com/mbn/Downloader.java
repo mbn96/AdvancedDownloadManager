@@ -8,20 +8,26 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Downloader {
+
+    private static final int MEG_BYTE = 1024 * 1024;
 
     private static final int BUFF_SIZE = 1024 * 8;
     private final Object writeRequestQueueLOCK = new Object();
     private final InfoCatcher.DL_info dlInfo;
     private final DlRequest dlRequest;
-    private final ThreadInfo[] threads;
+    //    private final ThreadInfo[] threads;
     private final int threadCount;
     private volatile boolean isRunning = true; // TODO: 5/7/21 change after stop...
+    private final ArrayList<ThreadInfoHolder> threads = new ArrayList<>();
+    private final Object threadListLock = new Object();
     private final MasterWriter masterWriter;
     private final SelfGeneratingPool<WriteRequest> requestPool = new SelfGeneratingPool<>() {
         @Override
@@ -46,7 +52,9 @@ public class Downloader {
     public Downloader(DlRequest dlRequest) throws FileNotFoundException {
         this.dlRequest = dlRequest;
         this.dlInfo = dlRequest.dlInfo;
-        this.threads = dlRequest.threads;
+        for (ThreadInfo info : dlRequest.threads) {
+            this.threads.add(new ThreadInfoHolder(info));
+        }
         this.threadCount = dlRequest.threadCount;
         masterWriter = new MasterWriter(dlRequest.downloadPath);
     }
@@ -67,6 +75,7 @@ public class Downloader {
             this.startIndex = startIndex;
             this.length = length;
             this.downloaded = downloaded;
+            finished = this.downloaded >= this.length;
         }
 
         public ThreadInfo(String info) {
@@ -74,6 +83,7 @@ public class Downloader {
             this.startIndex = Integer.parseInt(parts[0]);
             this.length = Integer.parseInt(parts[1]);
             this.downloaded = Integer.parseInt(parts[2]);
+            finished = this.downloaded >= this.length;
         }
 
         public boolean isFinished() {
@@ -112,8 +122,8 @@ public class Downloader {
     }
 
     private class QMSG {
-        private final AtomicBoolean result = new AtomicBoolean(false);
-        // TODO: 5/8/21 implement...
+        private volatile boolean result = false;
+        private volatile int startIndex;
     }
 
     public static class DlRequest {
@@ -163,8 +173,22 @@ public class Downloader {
     }
 
     private class ThreadInfoHolder {
-        private ThreadInfo threadInfo;
-        private Queue<QMSG> msgQueue;
+        private final ThreadInfo threadInfo;
+        private final LinkedList<QMSG> msgQueue = new LinkedList<>();
+
+        public ThreadInfoHolder(ThreadInfo threadInfo) {
+            this.threadInfo = threadInfo;
+        }
+    }
+
+    private void addToThreads(ThreadInfo info) {
+        synchronized (threadListLock) {
+            threads.add(new ThreadInfoHolder(info));
+        }
+    }
+
+    private void startThread(ThreadInfoHolder infoHolder) {
+        new Thread(new DownloaderThread(infoHolder)).start();
     }
 
     private class DownloaderThread extends ArguableRunnable<ThreadInfoHolder> {
@@ -194,7 +218,7 @@ public class Downloader {
                     boolean finished = false;
                     int download_temp;
                     InputStream inputStream = httpClient.getInputStream();
-                    while (isRunning) {
+                    while (isRunning && !finished) {
                         synchronized (args.threadInfo.LOCK) {
                             QMSG msg = args.msgQueue.poll();
                             if (msg != null) {
@@ -238,7 +262,7 @@ public class Downloader {
                 QMSG msg;
                 while ((msg = args.msgQueue.poll()) != null) {
                     // TODO: 5/7/21 reject request...
-                    msg.result.set(false);
+                    msg.result = false;
                     args.threadInfo.LOCK.notify();
                 }
             }
@@ -291,11 +315,14 @@ public class Downloader {
         private final RandomAccessFile randomAccessFile;
         private final String filePath;
         private final LinkedList<WriteRequest> requests = new LinkedList<>();
+        private final Thread writerThread;
         private final Object QUEUE_LOCK = new Object();
 
         public MasterWriter(String filePath) throws FileNotFoundException {
             this.filePath = filePath;
             randomAccessFile = new RandomAccessFile(filePath, "rwd");
+            writerThread = new Thread(worker);
+            writerThread.start();
         }
 
         public boolean addRequest(WriteRequest request) throws InterruptedException {
@@ -308,6 +335,44 @@ public class Downloader {
             }
             return false;
         }
+
+        private final Runnable worker = new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    WriteRequest request = null;
+                    synchronized (QUEUE_LOCK) {
+                        request = requests.poll();
+                        if (request == null) {
+                            if (isRunning) {
+                                try {
+                                    QUEUE_LOCK.wait();
+                                    request = requests.poll();
+                                } catch (InterruptedException e) {
+                                    e.printStackTrace();
+                                    // TODO: 5/9/21 Report back...
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    if (request != null) {
+                        try {
+                            randomAccessFile.seek(request.startIndex);
+                            randomAccessFile.write(request.buff, 0, request.length);
+                            releaseWriteRequest(request);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                            // TODO: 5/9/21 Report back...
+                            break;
+                        }
+                    }
+                }
+            }
+        };
+
     }
 
 
