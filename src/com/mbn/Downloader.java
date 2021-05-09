@@ -9,11 +9,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedList;
-import java.util.Queue;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Downloader {
 
@@ -57,6 +53,18 @@ public class Downloader {
         }
         this.threadCount = dlRequest.threadCount;
         masterWriter = new MasterWriter(dlRequest.downloadPath);
+        int activeParts = 0;
+        for (ThreadInfoHolder th_info : threads) {
+            if (!th_info.threadInfo.finished) {
+                startThread(th_info);
+                activeParts++;
+            }
+        }
+        if (activeParts < threadCount) {
+            for (int i = 0; i < threadCount - activeParts; i++) {
+                // TODO: 5/9/21 implement a method to check for Unfinished parts and try to divide them in two...
+            }
+        }
     }
 
     public static class ThreadInfo {
