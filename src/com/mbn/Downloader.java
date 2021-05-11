@@ -1,12 +1,14 @@
 package com.mbn;
 
-import java.io.*;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Downloader {
 
@@ -252,7 +254,7 @@ public class Downloader {
                                 if (masterWriter.addRequest(request_temp)) {
                                     download_temp += args.threadInfo.downloaded;
                                     args.threadInfo.downloaded = download_temp;
-                                    System.out.println(download_temp / MEG_BYTE);
+//                                    System.out.println(download_temp / MEG_BYTE);
                                 } else {
                                     // TODO: 5/8/21 probably stopped by the user...
                                 }
@@ -264,7 +266,7 @@ public class Downloader {
                     }
                     if (finished) {
                         // TODO: 5/7/21 finished ok...
-                        System.out.println("finished... :)");
+                        System.out.println("finished... :) " + args.threadInfo);
                     } else {
                         // TODO: 5/7/21 probably stopped by the user...
                     }
@@ -290,7 +292,9 @@ public class Downloader {
         }
     }
 
-    private class WriteRequest {
+
+    private static class WriteRequest {
+        //        private static final AtomicInteger test_ID = new AtomicInteger();
         private final byte[] buff;
         private volatile int startIndex, length;
 
@@ -298,6 +302,7 @@ public class Downloader {
             this.buff = buff;
             this.startIndex = startIndex;
             this.length = length;
+//            System.out.println(test_ID.incrementAndGet());
         }
 
         public void setStartIndex_length(int startIndex, int length) {
@@ -367,7 +372,7 @@ public class Downloader {
                         if (request == null) {
                             if (isRunning) {
                                 try {
-                                    QUEUE_LOCK.wait();
+                                    QUEUE_LOCK.wait(1000);
                                     request = requests.poll();
                                 } catch (InterruptedException e) {
                                     e.printStackTrace();
@@ -383,7 +388,7 @@ public class Downloader {
                         try {
                             randomAccessFile.seek(request.startIndex);
                             randomAccessFile.write(request.buff, 0, request.length);
-                            System.out.println("Wrote to file: " + request.startIndex + " <---> " + request.length);
+//                            System.out.println("Wrote to file: " + request.startIndex + " <---> " + request.length);
                             releaseWriteRequest(request);
                         } catch (IOException e) {
                             e.printStackTrace();
@@ -392,6 +397,12 @@ public class Downloader {
                         }
                     }
                 }
+                try {
+                    randomAccessFile.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                System.out.println("Master Writer Out :))");
             }
         };
 
