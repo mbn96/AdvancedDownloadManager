@@ -1,9 +1,6 @@
 package com.mbn;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -22,6 +19,7 @@ public class Downloader {
     //    private final ThreadInfo[] threads;
     private final int threadCount;
     private volatile boolean isRunning = true; // TODO: 5/7/21 change after stop...
+    private boolean hasStarted = false;
     private final ArrayList<ThreadInfoHolder> threads = new ArrayList<>();
     private final Object threadListLock = new Object();
     private final MasterWriter masterWriter;
@@ -53,17 +51,23 @@ public class Downloader {
         }
         this.threadCount = dlRequest.threadCount;
         masterWriter = new MasterWriter(dlRequest.downloadPath);
-        int activeParts = 0;
-        for (ThreadInfoHolder th_info : threads) {
-            if (!th_info.threadInfo.finished) {
-                startThread(th_info);
-                activeParts++;
+    }
+
+    public void start() {
+        if (!hasStarted) {
+            int activeParts = 0;
+            for (ThreadInfoHolder th_info : threads) {
+                if (!th_info.threadInfo.finished) {
+                    startThread(th_info);
+                    activeParts++;
+                }
             }
-        }
-        if (activeParts < threadCount) {
-            for (int i = 0; i < threadCount - activeParts; i++) {
-                // TODO: 5/9/21 implement a method to check for Unfinished parts and try to divide them in two...
+            if (activeParts < threadCount) {
+                for (int i = 0; i < threadCount - activeParts; i++) {
+                    // TODO: 5/9/21 implement a method to check for Unfinished parts and try to divide them in two...
+                }
             }
+            hasStarted = true;
         }
     }
 
@@ -75,6 +79,7 @@ public class Downloader {
         public ThreadInfo() {
         }
 
+        @SuppressWarnings("CopyConstructorMissesField")
         public ThreadInfo(ThreadInfo info) {
             this(info.startIndex, info.length, info.downloaded);
         }
@@ -129,10 +134,10 @@ public class Downloader {
         }
     }
 
-    private class QMSG {
-        private volatile boolean result = false;
-        private volatile int startIndex;
-    }
+//    private class QMSG {
+//        private volatile boolean result = false;
+//        private volatile int startIndex;
+//    }
 
     public static class DlRequest {
         private ThreadInfo[] threads;
@@ -182,7 +187,7 @@ public class Downloader {
 
     private class ThreadInfoHolder {
         private final ThreadInfo threadInfo;
-        private final LinkedList<QMSG> msgQueue = new LinkedList<>();
+//        private final LinkedList<QMSG> msgQueue = new LinkedList<>();
 
         public ThreadInfoHolder(ThreadInfo threadInfo) {
             this.threadInfo = threadInfo;
@@ -209,49 +214,57 @@ public class Downloader {
         public void run(ThreadInfoHolder args) {
             HttpURLConnection httpClient = null;
             try {
-                URL connectionURL = new URL(URLEncoder.encode(dlInfo.url, StandardCharsets.UTF_8));
+                URL connectionURL = new URL(dlInfo.url);
                 httpClient = (HttpURLConnection) connectionURL.openConnection();
                 httpClient.setRequestMethod("GET");
 
                 httpClient.addRequestProperty("range",
                         String.format("bytes=%d-%d",
                                 args.threadInfo.startIndex + args.threadInfo.downloaded,
-                                args.threadInfo.length - 1));
+                                (args.threadInfo.startIndex + args.threadInfo.length) - 1));
 
                 httpClient.setConnectTimeout(10_000);
                 httpClient.setReadTimeout(10_000);
                 httpClient.setInstanceFollowRedirects(true);
                 httpClient.connect();
                 if (httpClient.getResponseCode() == HttpURLConnection.HTTP_PARTIAL || httpClient.getResponseCode() == HttpURLConnection.HTTP_OK) {
+//                    System.out.println(httpClient.getHeaderFields());
                     boolean finished = false;
                     int download_temp;
                     InputStream inputStream = httpClient.getInputStream();
                     while (isRunning && !finished) {
                         synchronized (args.threadInfo.LOCK) {
-                            QMSG msg = args.msgQueue.poll();
-                            if (msg != null) {
-                                // TODO: 5/7/21 implement ...
-                            }
-                        }
-                        // TODO: 5/7/21 download...
-                        if (args.threadInfo.downloaded < args.threadInfo.length) {
-                            WriteRequest request_temp = getWriteRequest();
-                            download_temp = Math.min(BUFF_SIZE, (args.threadInfo.length - args.threadInfo.downloaded));
-                            download_temp = inputStream.read(request_temp.buff, 0, download_temp);
-                            request_temp.setStartIndex_length(args.threadInfo.startIndex + args.threadInfo.downloaded, download_temp);
-                            if (masterWriter.addRequest(request_temp)) {
-                                download_temp += args.threadInfo.downloaded;
-                                args.threadInfo.downloaded = download_temp;
+//                            QMSG msg = args.msgQueue.poll();
+//                            if (msg != null) {
+//                                // TODO: 5/7/21 implement ...
+//                            }
+//                        }
+                            // TODO: 5/7/21 download...
+                            if (args.threadInfo.downloaded < args.threadInfo.length) {
+                                WriteRequest request_temp = getWriteRequest();
+                                download_temp = Math.min(BUFF_SIZE, (args.threadInfo.length - args.threadInfo.downloaded));
+//                                System.out.println("before: " + download_temp);
+//                                download_temp = inputStream.read(request_temp.buff, 0, download_temp);
+//                                System.out.println("after: " + download_temp);
+                                JavaUtils.readFully(inputStream, request_temp.buff, download_temp);
+
+                                request_temp.setStartIndex_length(args.threadInfo.startIndex + args.threadInfo.downloaded, download_temp);
+                                if (masterWriter.addRequest(request_temp)) {
+                                    download_temp += args.threadInfo.downloaded;
+                                    args.threadInfo.downloaded = download_temp;
+                                    System.out.println(download_temp / MEG_BYTE);
+                                } else {
+                                    // TODO: 5/8/21 probably stopped by the user...
+                                }
                             } else {
-                                // TODO: 5/8/21 probably stopped by the user...
+                                finished = true;
+                                args.threadInfo.finished = true;
                             }
-                        } else {
-                            finished = true;
-                            args.threadInfo.finished = true;
                         }
                     }
                     if (finished) {
                         // TODO: 5/7/21 finished ok...
+                        System.out.println("finished... :)");
                     } else {
                         // TODO: 5/7/21 probably stopped by the user...
                     }
@@ -267,12 +280,12 @@ public class Downloader {
                 if (httpClient != null) {
                     httpClient.disconnect();
                 }
-                QMSG msg;
-                while ((msg = args.msgQueue.poll()) != null) {
-                    // TODO: 5/7/21 reject request...
-                    msg.result = false;
-                    args.threadInfo.LOCK.notify();
-                }
+//                QMSG msg;
+//                while ((msg = args.msgQueue.poll()) != null) {
+//                    // TODO: 5/7/21 reject request...
+//                    msg.result = false;
+//                    args.threadInfo.LOCK.notify();
+//                }
             }
         }
     }
@@ -328,7 +341,7 @@ public class Downloader {
 
         public MasterWriter(String filePath) throws FileNotFoundException {
             this.filePath = filePath;
-            randomAccessFile = new RandomAccessFile(filePath, "rwd");
+            randomAccessFile = new RandomAccessFile(filePath, "rw");
             writerThread = new Thread(worker);
             writerThread.start();
         }
@@ -370,6 +383,7 @@ public class Downloader {
                         try {
                             randomAccessFile.seek(request.startIndex);
                             randomAccessFile.write(request.buff, 0, request.length);
+                            System.out.println("Wrote to file: " + request.startIndex + " <---> " + request.length);
                             releaseWriteRequest(request);
                         } catch (IOException e) {
                             e.printStackTrace();
