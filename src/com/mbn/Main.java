@@ -1,7 +1,6 @@
 package com.mbn;
 
 import java.io.FileNotFoundException;
-import java.math.BigDecimal;
 import java.util.Arrays;
 
 public class Main {
@@ -34,6 +33,7 @@ public class Main {
                 public void onFinish() {
                     finished = true;
                     System.out.println("Download finished successfully!");
+                    deleteResumeFile();
                 }
 
                 @Override
@@ -42,6 +42,15 @@ public class Main {
                 }
             });
             downloader.start();
+
+            Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    downloader.stop(true);
+                    writeResumeFile();
+                }
+            }));
+
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -61,7 +70,15 @@ public class Main {
 
 
         // TODO: 5/7/21 add a hook to terminate the threads and write the last log...
-//        Runtime.getRuntime().addShutdownHook();
+
+
+    }
+
+    private static void writeResumeFile() {
+
+    }
+
+    private static void deleteResumeFile() {
 
     }
 

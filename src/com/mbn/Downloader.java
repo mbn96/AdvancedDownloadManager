@@ -83,6 +83,29 @@ public class Downloader {
         }
     }
 
+    public void stop(boolean sync) {
+        isRunning = false;
+        if (sync) {
+            synchronized (masterWriter.SHUT_DOWN_LOCK) {
+                try {
+                    masterWriter.SHUT_DOWN_LOCK.wait(2500);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public ThreadInfo[] getThreadInfo() {
+        synchronized (threadListLock) {
+            ThreadInfo[] threadInfo = new ThreadInfo[threads.size()];
+            for (int i = 0; i < threads.size(); i++) {
+                threadInfo[i] = threads.get(i).threadInfo;
+            }
+            return threadInfo;
+        }
+    }
+
     public static class ThreadInfo {
         public volatile int startIndex, length, downloaded;
         public final Object LOCK = new Object();
@@ -433,6 +456,7 @@ public class Downloader {
         private final LinkedList<WriteRequest> requests = new LinkedList<>();
         private final Thread writerThread;
         private final Object QUEUE_LOCK = new Object();
+        public final Object SHUT_DOWN_LOCK = new Object();
 
         public MasterWriter(String filePath) throws FileNotFoundException {
             this.filePath = filePath;
@@ -443,6 +467,7 @@ public class Downloader {
 
         public boolean addRequest(WriteRequest request) throws InterruptedException {
             synchronized (QUEUE_LOCK) {
+                // Keep it inside for best result with the cancel or interrupt situations.
                 if (isRunning) {
                     requests.add(request);
                     QUEUE_LOCK.notify();
@@ -493,6 +518,9 @@ public class Downloader {
                     e.printStackTrace();
                 }
                 System.out.println("Master Writer Out :))");
+                synchronized (SHUT_DOWN_LOCK) {
+                    SHUT_DOWN_LOCK.notify();
+                }
             }
         };
 
