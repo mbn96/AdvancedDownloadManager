@@ -1,10 +1,7 @@
 package com.mbn;
 
 import java.io.FileNotFoundException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.util.Arrays;
 
 public class Main {
@@ -19,7 +16,26 @@ public class Main {
                 , dl_info.remoteFileName);
 
         try {
-            Downloader downloader = new Downloader(dlRequest);
+            Downloader downloader = new Downloader(dlRequest, new Downloader.DownloadCallback() {
+                @Override
+                public void onProgress(float progress, int totalDownloaded, int speed) {
+                    System.out.printf("%s %% - %d MB - %s MB/Sec%n", Math.round(progress * 10000.0) / 100.0,
+                            totalDownloaded / Downloader.MEG_BYTE, Math.round((speed / (float) Downloader.MEG_BYTE) * 100) / 100f);
+//                    System.out.print(progress);
+//                    System.out.println(totalDownloaded);
+//                    System.out.println(speed / (float) Downloader.MEG_BYTE);
+                }
+
+                @Override
+                public void onFinish() {
+
+                }
+
+                @Override
+                public void onError() {
+
+                }
+            });
             downloader.start();
         } catch (FileNotFoundException e) {
             e.printStackTrace();

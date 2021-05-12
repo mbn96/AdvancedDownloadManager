@@ -8,11 +8,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.LinkedList;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Downloader {
 
-    private static final int MEG_BYTE = 1024 * 1024;
+    public static final int MEG_BYTE = 1024 * 1024;
 
     private static final int BUFF_SIZE = 1024 * 8;
     private final Object writeRequestQueueLOCK = new Object();
@@ -25,6 +24,7 @@ public class Downloader {
     private final ArrayList<ThreadInfoHolder> threads = new ArrayList<>();
     private final Object threadListLock = new Object();
     private final MasterWriter masterWriter;
+    private DownloadCallback downloadCallback;
     private final SelfGeneratingPool<WriteRequest> requestPool = new SelfGeneratingPool<>() {
         @Override
         public WriteRequest getNew() {
@@ -55,11 +55,20 @@ public class Downloader {
         masterWriter = new MasterWriter(dlRequest.downloadPath);
     }
 
+    public Downloader(DlRequest dlRequest, DownloadCallback callback) throws FileNotFoundException {
+        this(dlRequest);
+        this.downloadCallback = callback;
+    }
+
+    public void setCallback(DownloadCallback callback) {
+        this.downloadCallback = callback;
+    }
+
     public void start() {
         if (!hasStarted) {
             int activeParts = 0;
             for (ThreadInfoHolder th_info : threads) {
-                if (!th_info.threadInfo.finished) {
+                if (!th_info.threadInfo.isFinished()) {
                     startThread(th_info);
                     activeParts++;
                 }
@@ -70,13 +79,14 @@ public class Downloader {
                 }
             }
             hasStarted = true;
+            new Thread(progressReportThread).start();
         }
     }
 
     public static class ThreadInfo {
         public volatile int startIndex, length, downloaded;
         public final Object LOCK = new Object();
-        public volatile boolean finished = false;
+//        public volatile boolean finished = false;
 
         public ThreadInfo() {
         }
@@ -90,7 +100,7 @@ public class Downloader {
             this.startIndex = startIndex;
             this.length = length;
             this.downloaded = downloaded;
-            finished = this.downloaded >= this.length;
+//            finished = this.downloaded >= this.length;
         }
 
         public ThreadInfo(String info) {
@@ -98,11 +108,11 @@ public class Downloader {
             this.startIndex = Integer.parseInt(parts[0]);
             this.length = Integer.parseInt(parts[1]);
             this.downloaded = Integer.parseInt(parts[2]);
-            finished = this.downloaded >= this.length;
+//            finished = this.downloaded >= this.length;
         }
 
         public boolean isFinished() {
-            return finished;
+            return this.downloaded >= this.length;
         }
 
         public int getStartIndex() {
@@ -196,6 +206,26 @@ public class Downloader {
         }
     }
 
+    private boolean isFinished() {
+        synchronized (threadListLock) {
+            for (ThreadInfoHolder h : threads) {
+                if (!h.threadInfo.isFinished()) return false;
+            }
+        }
+        return true;
+    }
+
+    private void calculateProgress(ProgressHolder holder) {
+        synchronized (threadListLock) {
+            int dlSum = 0;
+            for (ThreadInfoHolder h : threads) {
+                dlSum += h.threadInfo.downloaded;
+            }
+            holder.totalDownload = dlSum;
+            holder.progress = dlSum / (float) (dlInfo.contentLength);
+        }
+    }
+
     private void addToThreads(ThreadInfo info) {
         synchronized (threadListLock) {
             threads.add(new ThreadInfoHolder(info));
@@ -205,6 +235,53 @@ public class Downloader {
     private void startThread(ThreadInfoHolder infoHolder) {
         new Thread(new DownloaderThread(infoHolder)).start();
     }
+
+    private class ProgressHolder {
+        private float progress;
+        private int totalDownload;
+    }
+
+    public interface DownloadCallback {
+        /**
+         * @param progress        Progress as a float in range 0-1
+         * @param totalDownloaded The total downloaded in bytes.
+         * @param speed           The speed in bytes per second.
+         */
+        void onProgress(float progress, int totalDownloaded, int speed);
+
+        void onFinish();
+
+        void onError(); // TODO: 5/12/21 Implement...
+    }
+
+    private final Runnable progressReportThread = new Runnable() {
+        private final ProgressHolder progressHolder = new ProgressHolder();
+        private long lastTime = System.currentTimeMillis();
+        private int lastDlSize;
+
+        @Override
+        public void run() {
+            while (isRunning) {
+                try {
+                    //noinspection BusyWait
+                    Thread.sleep(1000);
+                    calculateProgress(progressHolder);
+                    if (downloadCallback != null) {
+                        downloadCallback.onProgress(progressHolder.progress, progressHolder.totalDownload, getSpeed());
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        private int getSpeed() {
+            int newSpeed = ((int) ((progressHolder.totalDownload - lastDlSize) / (System.currentTimeMillis() - lastTime))) * 1000;
+            lastDlSize = progressHolder.totalDownload;
+            lastTime = System.currentTimeMillis();
+            return newSpeed;
+        }
+    };
 
     private class DownloaderThread extends ArguableRunnable<ThreadInfoHolder> {
 
@@ -231,10 +308,10 @@ public class Downloader {
                 httpClient.connect();
                 if (httpClient.getResponseCode() == HttpURLConnection.HTTP_PARTIAL || httpClient.getResponseCode() == HttpURLConnection.HTTP_OK) {
 //                    System.out.println(httpClient.getHeaderFields());
-                    boolean finished = false;
+//                    boolean finished = false;
                     int download_temp;
                     InputStream inputStream = httpClient.getInputStream();
-                    while (isRunning && !finished) {
+                    while (isRunning && !args.threadInfo.isFinished()) {
                         synchronized (args.threadInfo.LOCK) {
 //                            QMSG msg = args.msgQueue.poll();
 //                            if (msg != null) {
@@ -259,14 +336,15 @@ public class Downloader {
                                     // TODO: 5/8/21 probably stopped by the user...
                                 }
                             } else {
-                                finished = true;
-                                args.threadInfo.finished = true;
+//                                finished = true;
+//                                args.threadInfo.finished = true;
                             }
                         }
                     }
-                    if (finished) {
+                    if (args.threadInfo.isFinished()) {
                         // TODO: 5/7/21 finished ok...
-                        System.out.println("finished... :) " + args.threadInfo);
+//                        System.out.println("finished... :) " + args.threadInfo);
+                        reportThreadFinish(args);
                     } else {
                         // TODO: 5/7/21 probably stopped by the user...
                     }
@@ -292,6 +370,18 @@ public class Downloader {
         }
     }
 
+    private synchronized void reportThreadFinish(ThreadInfoHolder infoHolder) {
+        if (isRunning) {
+            if (isFinished()) {
+                isRunning = false;
+                if (downloadCallback != null) {
+                    downloadCallback.onFinish();
+                }
+            } else {
+                // TODO: 5/12/21 implement a method to check for Unfinished parts and try to divide them in two...
+            }
+        }
+    }
 
     private static class WriteRequest {
         //        private static final AtomicInteger test_ID = new AtomicInteger();
