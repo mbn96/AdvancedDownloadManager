@@ -17,10 +17,14 @@ public class Main {
 
         try {
             Downloader downloader = new Downloader(dlRequest, new Downloader.DownloadCallback() {
+                private volatile boolean finished = false;
+
                 @Override
                 public void onProgress(float progress, int totalDownloaded, int speed) {
-                    System.out.printf("%s %% - %d MB - %s MB/Sec%n", Math.round(progress * 10000.0) / 100.0,
-                            totalDownloaded / Downloader.MEG_BYTE, Math.round((speed / (float) Downloader.MEG_BYTE) * 100) / 100f);
+                    if (!finished) {
+                        System.out.printf("%s %% - %d MB - %s MB/Sec%n", Math.round(progress * 10000.0) / 100.0,
+                                totalDownloaded / Downloader.MEG_BYTE, Math.round((speed / (float) Downloader.MEG_BYTE) * 100) / 100f);
+                    }
 //                    System.out.print(progress);
 //                    System.out.println(totalDownloaded);
 //                    System.out.println(speed / (float) Downloader.MEG_BYTE);
@@ -28,7 +32,8 @@ public class Main {
 
                 @Override
                 public void onFinish() {
-
+                    finished = true;
+                    System.out.println("Download finished successfully!");
                 }
 
                 @Override
