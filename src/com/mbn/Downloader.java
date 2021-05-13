@@ -275,7 +275,7 @@ public class Downloader {
 
         void onFinish();
 
-        void onError(); // TODO: 5/12/21 Implement...
+        void onError(Exception e); // TODO: 5/12/21 Implement...
     }
 
     private final Runnable progressReportThread = new Runnable() {
@@ -390,9 +390,10 @@ public class Downloader {
                 break;
             case ErrorReport.ERR_EXCEPTION:
                 // TODO: 5/13/21 Probably fatal , but investigate more...
-
-                //noinspection DuplicateBranchesInSwitch
                 isRunning = false;
+                if (downloadCallback != null) {
+                    downloadCallback.onError(errorReport.exception);
+                }
                 break;
             case ErrorReport.ERR_MASTER_WRITER:
                 // TODO: 5/13/21 see if it is solvable...
@@ -531,7 +532,7 @@ public class Downloader {
                             releaseWriteRequest(request);
                         } catch (IOException e) {
                             e.printStackTrace();
-                            // TODO: 5/9/21 Report back...
+                            reportErr(new ErrorReport(ErrorReport.ERR_MASTER_WRITER, null, e));
                             break;
                         }
                     }

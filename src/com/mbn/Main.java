@@ -75,7 +75,7 @@ public class Main {
                 }
 
                 @Override
-                public void onError() {
+                public void onError(Exception e) {
 
                 }
             });
@@ -201,7 +201,7 @@ public class Main {
                 }
 
                 @Override
-                public void onError() {
+                public void onError(Exception e) {
 
                 }
             });
