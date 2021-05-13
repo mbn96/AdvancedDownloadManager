@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.RandomAccessFile;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -374,12 +375,15 @@ public class Downloader {
                 } else {
                     // TODO: 5/7/21 do something... bad response code...
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-                // TODO: 5/8/21 master writer has problem...
-            } finally {
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof SocketTimeoutException) {
+                    // TODO: 5/13/21 Make it more elegant...
+                    startThread(args);
+                } else {
+                    e.printStackTrace();
+                }
+            } // TODO: 5/8/21 master writer has problem...
+            finally {
                 if (httpClient != null) {
                     httpClient.disconnect();
                 }
