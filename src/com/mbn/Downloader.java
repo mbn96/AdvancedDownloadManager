@@ -331,69 +331,72 @@ public class Downloader {
                 httpClient.setInstanceFollowRedirects(true);
                 httpClient.connect();
                 if (httpClient.getResponseCode() == HttpURLConnection.HTTP_PARTIAL || httpClient.getResponseCode() == HttpURLConnection.HTTP_OK) {
-//                    System.out.println(httpClient.getHeaderFields());
-//                    boolean finished = false;
                     int download_temp;
                     InputStream inputStream = httpClient.getInputStream();
                     while (isRunning && !args.threadInfo.isFinished()) {
                         synchronized (args.threadInfo.LOCK) {
-//                            QMSG msg = args.msgQueue.poll();
-//                            if (msg != null) {
-//                                // TODO: 5/7/21 implement ...
-//                            }
-//                        }
-                            // TODO: 5/7/21 download...
                             if (args.threadInfo.downloaded < args.threadInfo.length) {
                                 WriteRequest request_temp = getWriteRequest();
                                 download_temp = Math.min(BUFF_SIZE, (args.threadInfo.length - args.threadInfo.downloaded));
-//                                System.out.println("before: " + download_temp);
-//                                download_temp = inputStream.read(request_temp.buff, 0, download_temp);
-//                                System.out.println("after: " + download_temp);
                                 JavaUtils.readFully(inputStream, request_temp.buff, download_temp);
-
                                 request_temp.setStartIndex_length(args.threadInfo.startIndex + args.threadInfo.downloaded, download_temp);
                                 if (masterWriter.addRequest(request_temp)) {
                                     download_temp += args.threadInfo.downloaded;
                                     args.threadInfo.downloaded = download_temp;
-//                                    System.out.println(download_temp / MEG_BYTE);
                                 } else {
                                     // TODO: 5/8/21 probably stopped by the user...
+                                    System.out.println("Master writer sent false...");
                                 }
-                            } else {
-//                                finished = true;
-//                                args.threadInfo.finished = true;
                             }
                         }
                     }
                     if (args.threadInfo.isFinished()) {
-                        // TODO: 5/7/21 finished ok...
-//                        System.out.println("finished... :) " + args.threadInfo);
                         reportThreadFinish(args);
                     } else {
                         // TODO: 5/7/21 probably stopped by the user...
+                        System.out.printf("Thread exit without finish and no exception. IsRunning: %s%n", isRunning);
+                        if (isRunning) {
+                            // TODO: 5/13/21 See if it's just this thread... Very unlikely...
+                        }
                     }
                 } else {
-                    // TODO: 5/7/21 do something... bad response code...
+                    System.out.printf("Bad response code: %d%n", httpClient.getResponseCode());
+                    reportErr(new ErrorReport(ErrorReport.ERR_BAD_RES, args, null));
                 }
             } catch (IOException | InterruptedException e) {
                 if (e instanceof SocketTimeoutException) {
-                    // TODO: 5/13/21 Make it more elegant...
-                    startThread(args);
+                    reportErr(new ErrorReport(ErrorReport.ERR_TIME_OUT, args, null));
                 } else {
-                    e.printStackTrace();
+                    reportErr(new ErrorReport(ErrorReport.ERR_EXCEPTION, args, e));
                 }
-            } // TODO: 5/8/21 master writer has problem...
-            finally {
+                e.printStackTrace();
+            } finally {
                 if (httpClient != null) {
                     httpClient.disconnect();
                 }
-//                QMSG msg;
-//                while ((msg = args.msgQueue.poll()) != null) {
-//                    // TODO: 5/7/21 reject request...
-//                    msg.result = false;
-//                    args.threadInfo.LOCK.notify();
-//                }
             }
+        }
+    }
+
+
+    private synchronized void reportErr(ErrorReport errorReport) {
+        switch (errorReport.type) {
+            case ErrorReport.ERR_BAD_RES:
+                isRunning = false;
+                break;
+            case ErrorReport.ERR_TIME_OUT:
+                // TODO: 5/13/21 add test to see if it's frequently happening...
+                startThread(errorReport.holder);
+                break;
+            case ErrorReport.ERR_EXCEPTION:
+                // TODO: 5/13/21 Probably fatal , but investigate more...
+
+                //noinspection DuplicateBranchesInSwitch
+                isRunning = false;
+                break;
+            case ErrorReport.ERR_MASTER_WRITER:
+                // TODO: 5/13/21 see if it is solvable...
+                break;
         }
     }
 
@@ -407,6 +410,23 @@ public class Downloader {
             } else {
                 // TODO: 5/12/21 implement a method to check for Unfinished parts and try to divide them in two...
             }
+        }
+    }
+
+    private static class ErrorReport {
+        static final int ERR_BAD_RES = 1;
+        static final int ERR_TIME_OUT = ERR_BAD_RES << 1;
+        static final int ERR_EXCEPTION = ERR_BAD_RES << 2;
+        static final int ERR_MASTER_WRITER = ERR_BAD_RES << 3;
+
+        private Exception exception;
+        private int type;
+        private ThreadInfoHolder holder;
+
+        public ErrorReport(int type, ThreadInfoHolder holder, Exception exception) {
+            this.exception = exception;
+            this.type = type;
+            this.holder = holder;
         }
     }
 

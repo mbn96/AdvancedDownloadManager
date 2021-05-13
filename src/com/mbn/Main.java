@@ -44,7 +44,8 @@ public class Main {
     private static void handleDownload(String[] args) {
         try {
             Downloader.DlRequest dlRequest = getDlreq(args);
-            startDownload(dlRequest);
+            if (dlRequest != null)
+                startDownload(dlRequest);
         } catch (Exception e) {
             e.printStackTrace();
             System.out.println(e.getMessage());
@@ -102,7 +103,8 @@ public class Main {
     private static void handleAdd(String[] args) {
         try {
             Downloader.DlRequest dlRequest = getDlreq(args);
-            writeResumeFile(dlRequest);
+            if (dlRequest != null)
+                writeResumeFile(dlRequest);
         } catch (Exception e) {
             e.printStackTrace();
             System.out.println(e.getMessage());
@@ -133,6 +135,10 @@ public class Main {
 
         dlRequest.setThreadCount(threadCount);
         dlRequest.setDlInfo(dl_info = InfoCatcher.catchInfo(url));
+        if (dl_info.hadErr) {
+            System.out.printf("There was a problem:%s%s%n", System.lineSeparator(), dl_info.exception == null ? ("Status: " + dl_info.statusCode) : dl_info.exception.getMessage());
+            return null;
+        }
         dlRequest.setDownloadPath(dlPath == null ? dl_info.remoteFileName : dlPath);
         dlRequest.setThreads(generateThreadInfo(dl_info, threadCount));
 
