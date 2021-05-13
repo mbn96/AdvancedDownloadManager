@@ -9,6 +9,7 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class Downloader {
 
@@ -75,6 +76,7 @@ public class Downloader {
             if (activeParts < threadCount) {
                 for (int i = 0; i < threadCount - activeParts; i++) {
                     // TODO: 5/9/21 implement a method to check for Unfinished parts and try to divide them in two...
+                    checkSplit();
                 }
             }
             hasStarted = true;
@@ -107,7 +109,9 @@ public class Downloader {
 
     public static class ThreadInfo {
         public volatile int startIndex, length, downloaded;
-        public final Object LOCK = new Object();
+        //        public final Object LOCK = new Object();
+        private final ReentrantReadWriteLock readWriteLock = new ReentrantReadWriteLock(true);
+        public final ReentrantReadWriteLock.WriteLock writeLock = readWriteLock.writeLock();
 //        public volatile boolean finished = false;
 
         public ThreadInfo() {
@@ -134,6 +138,10 @@ public class Downloader {
 
         public boolean isFinished() {
             return this.downloaded >= this.length;
+        }
+
+        public int left() {
+            return length - downloaded;
         }
 
         public int getStartIndex() {
@@ -250,10 +258,38 @@ public class Downloader {
         }
     }
 
-    private void addToThreads(ThreadInfo info) {
+    private ThreadInfoHolder addToThreads(ThreadInfo info) {
         synchronized (threadListLock) {
-            threads.add(new ThreadInfoHolder(info));
+            ThreadInfoHolder infoHolder = new ThreadInfoHolder(info);
+            threads.add(infoHolder);
+            return infoHolder;
         }
+    }
+
+    private synchronized void checkSplit() {
+        ThreadInfo threadInfo;
+        for (ThreadInfoHolder holder : threads) {
+            threadInfo = holder.threadInfo;
+            System.out.println("Inside split, Thread left: " + threadInfo.left());
+            if (!threadInfo.isFinished() && (threadInfo.left()) >= MEG_BYTE) {
+
+                threadInfo.writeLock.lock();
+                System.out.println("Inside Lock, left:" + threadInfo.left());
+                if (threadInfo.left() >= MEG_BYTE) {
+                    int left = threadInfo.left();
+                    int splitPart = left / 2;
+                    ThreadInfo newInfo = new ThreadInfo(threadInfo.startIndex + threadInfo.downloaded + splitPart, left - splitPart, 0);
+                    threadInfo.length = threadInfo.downloaded + splitPart;
+                    ThreadInfoHolder newHolder = addToThreads(newInfo);
+                    startThread(newHolder);
+                    System.out.println("Split, New thread: " + newInfo);
+                    threadInfo.writeLock.unlock();
+                    break;
+                }
+
+            }
+        }
+
     }
 
     private void startThread(ThreadInfoHolder infoHolder) {
@@ -326,29 +362,29 @@ public class Downloader {
                                 args.threadInfo.startIndex + args.threadInfo.downloaded,
                                 (args.threadInfo.startIndex + args.threadInfo.length) - 1));
 
-                httpClient.setConnectTimeout(10_000);
-                httpClient.setReadTimeout(10_000);
+                httpClient.setConnectTimeout(60_000);
+                httpClient.setReadTimeout(60_000);
                 httpClient.setInstanceFollowRedirects(true);
                 httpClient.connect();
                 if (httpClient.getResponseCode() == HttpURLConnection.HTTP_PARTIAL || httpClient.getResponseCode() == HttpURLConnection.HTTP_OK) {
                     int download_temp;
                     InputStream inputStream = httpClient.getInputStream();
                     while (isRunning && !args.threadInfo.isFinished()) {
-                        synchronized (args.threadInfo.LOCK) {
-                            if (args.threadInfo.downloaded < args.threadInfo.length) {
-                                WriteRequest request_temp = getWriteRequest();
-                                download_temp = Math.min(BUFF_SIZE, (args.threadInfo.length - args.threadInfo.downloaded));
-                                JavaUtils.readFully(inputStream, request_temp.buff, download_temp);
-                                request_temp.setStartIndex_length(args.threadInfo.startIndex + args.threadInfo.downloaded, download_temp);
-                                if (masterWriter.addRequest(request_temp)) {
-                                    download_temp += args.threadInfo.downloaded;
-                                    args.threadInfo.downloaded = download_temp;
-                                } else {
-                                    // TODO: 5/8/21 probably stopped by the user...
-                                    System.out.println("Master writer sent false...");
-                                }
+                        args.threadInfo.writeLock.lock();
+                        if (args.threadInfo.downloaded < args.threadInfo.length) {
+                            WriteRequest request_temp = getWriteRequest();
+                            download_temp = Math.min(BUFF_SIZE, (args.threadInfo.length - args.threadInfo.downloaded));
+                            JavaUtils.readFully(inputStream, request_temp.buff, download_temp);
+                            request_temp.setStartIndex_length(args.threadInfo.startIndex + args.threadInfo.downloaded, download_temp);
+                            if (masterWriter.addRequest(request_temp)) {
+                                download_temp += args.threadInfo.downloaded;
+                                args.threadInfo.downloaded = download_temp;
+                            } else {
+                                // TODO: 5/8/21 probably stopped by the user...
+                                System.out.println("Master writer sent false...");
                             }
                         }
+                        args.threadInfo.writeLock.unlock();
                     }
                     if (args.threadInfo.isFinished()) {
                         reportThreadFinish(args);
@@ -397,6 +433,8 @@ public class Downloader {
                 break;
             case ErrorReport.ERR_MASTER_WRITER:
                 // TODO: 5/13/21 see if it is solvable...
+                //noinspection DuplicateBranchesInSwitch
+                isRunning = false;
                 break;
         }
     }
@@ -410,6 +448,7 @@ public class Downloader {
                 }
             } else {
                 // TODO: 5/12/21 implement a method to check for Unfinished parts and try to divide them in two...
+                checkSplit();
             }
         }
     }
