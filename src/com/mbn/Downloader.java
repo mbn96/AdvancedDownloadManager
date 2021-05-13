@@ -16,7 +16,6 @@ public class Downloader {
     private static final int BUFF_SIZE = 1024 * 8;
     private final Object writeRequestQueueLOCK = new Object();
     private final InfoCatcher.DL_info dlInfo;
-    private final DlRequest dlRequest;
     //    private final ThreadInfo[] threads;
     private final int threadCount;
     private volatile boolean isRunning = true; // TODO: 5/7/21 change after stop...
@@ -46,7 +45,6 @@ public class Downloader {
 
 
     public Downloader(DlRequest dlRequest) throws FileNotFoundException {
-        this.dlRequest = dlRequest;
         this.dlInfo = dlRequest.dlInfo;
         for (ThreadInfo info : dlRequest.threads) {
             this.threads.add(new ThreadInfoHolder(info));

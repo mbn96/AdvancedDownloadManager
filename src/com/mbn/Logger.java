@@ -36,12 +36,27 @@ public class Logger {
         logFile = new File(logFilePath);
         this.headerWriter = headerWriter;
         this.bodyWriter = bodyWriter;
-        if (!logFile.getParentFile().exists()) {
+        if (logFile.getParentFile() != null && !logFile.getParentFile().exists()) {
             logFile.getParentFile().mkdirs();
         }
         if (logFile.exists()) {
             logFile.delete();
         }
+    }
+
+    public void writeLog() throws IOException {
+        FileOutputStream outputStream = new FileOutputStream(logFile);
+        headerWriter.writeHeader(outputStream);
+        bodyWriter.writeBody(outputStream);
+        outputStream.flush();
+        outputStream.close();
+    }
+
+    public void refreshLog() throws IOException {
+        if (logFile.exists()) {
+            logFile.delete();
+        }
+        writeLog();
     }
 
     public LogBodyWriter getBodyWriter() {
