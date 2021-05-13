@@ -114,7 +114,6 @@ public class Downloader {
         public ThreadInfo() {
         }
 
-        @SuppressWarnings("CopyConstructorMissesField")
         public ThreadInfo(ThreadInfo info) {
             this(info.startIndex, info.length, info.downloaded);
         }
@@ -185,6 +184,9 @@ public class Downloader {
             this.dlInfo = dlInfo;
             this.threadCount = threadCount;
             this.downloadPath = dlPath;
+        }
+
+        public DlRequest() {
         }
 
         public String getDownloadPath() {
