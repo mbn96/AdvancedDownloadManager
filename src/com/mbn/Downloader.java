@@ -270,11 +270,11 @@ public class Downloader {
         ThreadInfo threadInfo;
         for (ThreadInfoHolder holder : threads) {
             threadInfo = holder.threadInfo;
-            System.out.println("Inside split, Thread left: " + threadInfo.left());
+//            System.out.println("Inside split, Thread left: " + threadInfo.left());
             if (!threadInfo.isFinished() && (threadInfo.left()) >= MEG_BYTE) {
 
                 threadInfo.writeLock.lock();
-                System.out.println("Inside Lock, left:" + threadInfo.left());
+//                System.out.println("Inside Lock, left:" + threadInfo.left());
                 if (threadInfo.left() >= MEG_BYTE) {
                     int left = threadInfo.left();
                     int splitPart = left / 2;
