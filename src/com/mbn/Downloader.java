@@ -282,7 +282,11 @@ public class Downloader {
                     threadInfo.length = threadInfo.downloaded + splitPart;
                     ThreadInfoHolder newHolder = addToThreads(newInfo);
                     startThread(newHolder);
-                    System.out.println("Split, New thread: " + newInfo);
+
+//                    System.out.println("Split, New thread: " + newInfo);
+//                    ConsoleUtils.clearLastLine();
+//                    ConsoleUtils.print("Split, New thread: " + newInfo);
+
                     if (threadInfo.writeLock.isHeldByCurrentThread()) {
                         threadInfo.writeLock.unlock();
                     }

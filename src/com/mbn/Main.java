@@ -59,8 +59,11 @@ public class Main {
                 @Override
                 public void onProgress(float progress, int totalDownloaded, int speed) {
                     if (!finished) {
-                        System.out.printf("%s %% - %d MB - %s MB/Sec%n", Math.round(progress * 10000.0) / 100.0,
-                                totalDownloaded / Downloader.MEG_BYTE, Math.round((speed / (float) Downloader.MEG_BYTE) * 100) / 100f);
+//                        System.out.printf("%s %% - %d MB - %s MB/Sec%n", Math.round(progress * 10000.0) / 100.0,
+//                                totalDownloaded / Downloader.MEG_BYTE, Math.round((speed / (float) Downloader.MEG_BYTE) * 100) / 100f);
+                        ConsoleUtils.clearLastLine();
+                        ConsoleUtils.print(String.format("%s %% - %d MB - %s MB/Sec", Math.round(progress * 10000.0) / 100.0,
+                                totalDownloaded / Downloader.MEG_BYTE, Math.round((speed / (float) Downloader.MEG_BYTE) * 100) / 100f));
                     }
 //                    System.out.print(progress);
 //                    System.out.println(totalDownloaded);
@@ -70,7 +73,7 @@ public class Main {
                 @Override
                 public void onFinish() {
                     finished = true;
-                    System.out.println("Download finished successfully!");
+                    System.out.println("\nDownload finished successfully!");
                     deleteResumeFile(dlRequest);
                 }
 
