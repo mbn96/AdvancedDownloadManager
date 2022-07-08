@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="AdvancedDownloadManager:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/AdvancedDownloadManager_jar</output-path>
+    <root id="archive" name="AdvancedDownloadManager.jar">
+      <element id="module-output" name="AdvancedDownloadManager" />
+    </root>
+  </artifact>
+</component>

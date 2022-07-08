@@ -37,7 +37,7 @@ public class InfoCatcher {
         HttpURLConnection client = null;
         DL_info info = new DL_info();
         try {
-            URL connectionURL = new URL(URLEncoder.encode(url, StandardCharsets.UTF_8));
+            URL connectionURL = new URL(url);
             info.url = connectionURL.toString();
             String path = connectionURL.getPath();
             info.remoteFileName = URLDecoder.decode(path.substring(path.lastIndexOf('/') + 1), StandardCharsets.UTF_8);
